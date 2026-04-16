@@ -1,7 +1,6 @@
 const admin = require('../config/firebase');
 const db    = require('../config/db');
 
-// ── Parsear "1:30 PM" → Date de hoy ──────────────────────────────────────────
 function parsearHoraHoy(horaStr) {
     const partes = horaStr.trim().split(/[\s:]+/);
     let h = parseInt(partes[0]) || 0;
@@ -29,10 +28,7 @@ function calcularProximaSlot(horaPrimeraToma, frecuenciaHoras) {
     return null;
 }
 
-// ── Enviar notificación FCM ───────────────────────────────────────────────────
-// Usamos data-only payload para que onMessageReceived sea llamado SIEMPRE,
-// incluso cuando la app está en background o cerrada.
-// Esto garantiza que la app construya la notificación con los botones.
+
 async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMedicamento, dosis) {
     try {
         const [rows] = await db.query(
@@ -41,7 +37,7 @@ async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMe
         );
 
         if (rows.length === 0 || !rows[0].fcm_token) {
-            console.log(`⚠️  Usuario ${idUsuario} sin token FCM registrado`);
+            console.log(`  Usuario ${idUsuario} sin token FCM registrado`);
             return false;
         }
 
@@ -50,8 +46,7 @@ async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMe
         const mensaje = {
             token: fcmToken,
 
-            // DATA-ONLY payload: onMessageReceived es llamado siempre
-            // (foreground, background, app cerrada)
+           
             data: {
                 idProgramacion: String(idProgramacion),
                 nombre:         nombreMedicamento,
@@ -60,41 +55,36 @@ async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMe
 
             // Configuración Android para garantizar entrega inmediata
             android: {
-                priority: 'high',           // Prioridad alta = entrega inmediata
-                ttl:      300,              // TTL en segundos (5 minutos)
-                // Configuración de la notificación que ayuda al sistema a priorizar
-                // el mensaje aunque la app esté cerrada (Doze mode)
+                priority: 'high',           
+                ttl:      300,              
+
                 notification: {
                     channelId:             'medialert_reminders',
                     notificationPriority:  'PRIORITY_MAX',
                     visibility:            'PUBLIC',
                     defaultSound:          true,
                     defaultVibrateTimings: true,
-                    // clickAction vacío para que lo maneje la app
+                    
                 }
             }
         };
 
         const respuesta = await admin.messaging().send(mensaje);
-        console.log(`✅ FCM → usuario=${idUsuario} prog=${idProgramacion} medicamento="${nombreMedicamento}" | ID: ${respuesta}`);
+        console.log(` FCM → usuario=${idUsuario} prog=${idProgramacion} medicamento="${nombreMedicamento}" | ID: ${respuesta}`);
         return true;
 
     } catch (error) {
         if (error.code === 'messaging/registration-token-not-registered' ||
             error.code === 'messaging/invalid-registration-token') {
-            console.log(`⚠️  Token FCM inválido para usuario ${idUsuario}, limpiando...`);
+            console.log(`  Token FCM inválido para usuario ${idUsuario}, limpiando...`);
             await db.query('UPDATE usuarios SET fcm_token = NULL WHERE idUsuario = ?', [idUsuario]);
         }
-        console.error(`❌ Error FCM usuario=${idUsuario}:`, error.message);
+        console.error(`Error FCM usuario=${idUsuario}:`, error.message);
         return false;
     }
 }
 
-// ── Cron: ejecutado cada minuto ───────────────────────────────────────────────
-// Reglas:
-//   • Tomado / No Tomado hoy  → no notificar más
-//   • Pospuesto               → renotificar si pasaron ~5 min desde el último Pospuesto
-//   • Sin registro + slot próximo en 5 min → notificar primera vez
+
 async function enviarNotificacionesProximas() {
     try {
         const [programaciones] = await db.query(`
@@ -116,13 +106,12 @@ async function enviarNotificacionesProximas() {
         if (programaciones.length === 0) return;
 
         const ahora  = new Date();
-        // Ventana de 1 minuto: notificar solo cuando el slot ya llegó o está a ≤60s
-        // Esto evita que el cron dispare 3-5 min antes de la hora real.
+        
         const en1min = new Date(ahora.getTime() + 60 * 1000);
         let enviadas = 0;
 
         for (const prog of programaciones) {
-            // Último registro de hoy para esta programación
+
             const [ultimoHoy] = await db.query(`
                 SELECT estado, creado_en
                 FROM historial_tomas
@@ -148,18 +137,17 @@ async function enviarNotificacionesProximas() {
                     );
                     if (ok) {
                         enviadas++;
-                        console.log(`⏰ Renotificación POSPUESTO: "${prog.nombre_medicamento}" (${minutos.toFixed(1)} min después)`);
+                        console.log(` Renotificación POSPUESTO: "${prog.nombre_medicamento}" (${minutos.toFixed(1)} min después)`);
                     }
                 }
                 continue;
             }
 
-            // ── Normal: slot próximo en los próximos 5 min → notificar ────
             const proximaSlot = calcularProximaSlot(prog.hora_primera_toma, prog.frecuencia_horas);
             if (!proximaSlot) continue;
 
             if (proximaSlot >= ahora && proximaSlot <= en1min) {
-                // Evitar duplicados: ¿ya se mandó notificación en los últimos 2 min?
+
                 const [reciente] = await db.query(`
                     SELECT idToma FROM historial_tomas
                     WHERE id_programacion_fk = ?
@@ -178,11 +166,11 @@ async function enviarNotificacionesProximas() {
         }
 
         if (enviadas > 0) {
-            console.log(`📬 Cron FCM: ${enviadas} notificación(es) enviada(s) — ${ahora.toLocaleTimeString('es-MX')}`);
+            console.log(` Cron FCM: ${enviadas} notificación(es) enviada(s) — ${ahora.toLocaleTimeString('es-MX')}`);
         }
 
     } catch (err) {
-        console.error('❌ Error en cron FCM:', err.message);
+        console.error(' Error en cron FCM:', err.message);
     }
 }
 

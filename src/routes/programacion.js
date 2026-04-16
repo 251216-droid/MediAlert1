@@ -5,7 +5,7 @@ const db = require('../config/db');
 router.post('/agregar', async (req, res) => {
     const { id_medicamento_fk, hora_primera_toma, frecuencia_horas, dias_semana, duracion_dias } = req.body;
     
-    // Calcular fecha_fin si se especificó duración
+    
     let fecha_fin = null;
     if (duracion_dias && duracion_dias > 0) {
         const hoy = new Date();
@@ -17,9 +17,9 @@ router.post('/agregar', async (req, res) => {
     try {
         await db.query(query, [id_medicamento_fk, hora_primera_toma, frecuencia_horas, dias_semana, fecha_fin]);
         
-        // Si tiene duración, programar para marcar como inactivo cuando expire
+        //quitar
         if (fecha_fin) {
-            // Actualizamos estado_medicamento en la fecha fin (esto lo hace la query de próximas dosis)
+            console.log(` Programación agregada: medicamento=${id_medicamento_fk} primera_toma=${hora_primera_toma} frecuencia=${frecuencia_horas} dias=${dias_semana} fecha_fin=${fecha_fin}`);
         }
         
         res.status(201).json({ mensaje: 'Programación guardada', fecha_fin });

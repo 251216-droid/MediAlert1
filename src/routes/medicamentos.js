@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
-// AGREGAR MEDICAMENTO
+
 router.post('/agregar', async (req, res) => {
     const { idUsuario, nombre_medicamento, tipo_presentacion, dosis, categoria, estado_medicamento } = req.body;
     try {
@@ -25,7 +25,7 @@ router.post('/agregar', async (req, res) => {
     }
 });
 
-// OBTENER LISTA con programacion incluida
+
 router.get('/usuario/:idUsuario', async (req, res) => {
     const { idUsuario } = req.params;
     try {
@@ -42,7 +42,7 @@ router.get('/usuario/:idUsuario', async (req, res) => {
     }
 });
 
-// EDITAR MEDICAMENTO (solo campos del medicamento)
+
 router.put('/editar/:id', async (req, res) => {
     const { id } = req.params;
     const { nombre_medicamento, tipo_presentacion, dosis, categoria, estado_medicamento } = req.body;
@@ -57,7 +57,6 @@ router.put('/editar/:id', async (req, res) => {
     }
 });
 
-// ACTUALIZAR PROGRAMACION (frecuencia, hora) — para cuando el usuario edita el horario
 router.put('/programacion/:idMedicamento', async (req, res) => {
     const { idMedicamento } = req.params;
     const { hora_primera_toma, frecuencia_horas, dias_semana, duracion_dias } = req.body;
@@ -70,7 +69,6 @@ router.put('/programacion/:idMedicamento', async (req, res) => {
     }
 
     try {
-        // Verificar si existe programacion
         const [existing] = await db.query('SELECT idProgramacion FROM programacion_horarios WHERE id_medicamento_fk = ?', [idMedicamento]);
         if (existing.length > 0) {
             await db.query(
@@ -90,7 +88,6 @@ router.put('/programacion/:idMedicamento', async (req, res) => {
     }
 });
 
-// ELIMINAR MEDICAMENTO (en cascada: historial → programacion → medicamento)
 router.delete('/eliminar/:id', async (req, res) => {
     const { id } = req.params;
     try {

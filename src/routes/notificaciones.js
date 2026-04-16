@@ -2,7 +2,6 @@ const express = require('express');
 const router  = express.Router();
 const { enviarNotificacionMedicamento, enviarNotificacionesProximas } = require('../utils/notificacionFCM');
 
-// POST /api/notificaciones/enviar — enviar notificación a un usuario específico
 router.post('/enviar', async (req, res) => {
     const { idUsuario, idProgramacion, nombreMedicamento, dosis } = req.body;
     if (!idUsuario || !idProgramacion || !nombreMedicamento) {
@@ -16,8 +15,7 @@ router.post('/enviar', async (req, res) => {
     }
 });
 
-// POST /api/notificaciones/enviar-proximas — llamado por el cron job interno
-// También puede llamarse manualmente para pruebas
+
 router.post('/enviar-proximas', async (req, res) => {
     await enviarNotificacionesProximas();
     res.json({ mensaje: 'Revisión de próximas tomas ejecutada' });

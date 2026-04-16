@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
-// ── UTILIDADES ────────────────────────────────────────────────────────────────
 
 function parsearHora(horaStr) {
     if (!horaStr) return { hours: 0, minutes: 0 };
@@ -23,14 +22,6 @@ function formato12h(date) {
     return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
-// Calcula el próximo slot FUTURO disponible para un medicamento.
-// Reglas:
-//   1. Genera todos los slots del día (hora_primera_toma + N * frecuencia)
-//   2. De esos slots, busca el próximo que sea FUTURO y no esté registrado como Tomado/No Tomado
-//   3. Si no hay ninguno hoy → devuelve la primera toma de mañana
-//
-// CLAVE: Solo muestra slots FUTUROS, nunca slots del pasado.
-// Esto evita que al limpiar historial aparezcan tomas de horas que ya pasaron.
 function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistradasHoy) {
     const now = new Date();
     const { hours, minutes } = parsearHora(horaPrimeraToma);
@@ -38,12 +29,10 @@ function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistrada
     const horaBase = new Date(now);
     horaBase.setHours(hours, minutes, 0, 0);
 
-    // Normalizar el set de tomas registradas para comparación
     const registradas = new Set(
         tomasRegistradasHoy.map(t => t.toLowerCase().trim())
     );
 
-    // Generar slots del día de hoy
     const slots = [];
     let slot = new Date(horaBase);
     const finDia = new Date(now);
@@ -55,9 +44,7 @@ function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistrada
         if (slots.length > 100) break;
     }
 
-    // Buscar el primer slot FUTURO que NO esté registrado
     for (const s of slots) {
-        // Solo slots futuros (con 1 minuto de margen para evitar parpadeo)
         if (s.getTime() > now.getTime() - 60000) {
             const display = formato12h(s).toLowerCase().trim();
             if (!registradas.has(display)) {
@@ -66,18 +53,15 @@ function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistrada
         }
     }
 
-    // No hay slot disponible hoy → mostrar la primera toma de mañana
     const manana = new Date(horaBase);
     manana.setDate(manana.getDate() + 1);
     return { fecha: manana, display: formato12h(manana) };
 }
 
-// ── 1. PRÓXIMAS DOSIS ─────────────────────────────────────────────────────────
 router.get('/proximas/:idUsuario', async (req, res) => {
     const { idUsuario } = req.params;
 
     try {
-        // Obtener todos los medicamentos activos con programación
         const [programaciones] = await db.query(`
             SELECT
                 p.idProgramacion,
@@ -98,8 +82,7 @@ router.get('/proximas/:idUsuario', async (req, res) => {
 
         const idsProg = programaciones.map(p => p.idProgramacion);
 
-        // Obtener registros de HOY para cada programación
-        // Solo Tomado y No Tomado — Pospuesto no cuenta como "ya hecho"
+        
         const [historialHoy] = await db.query(`
             SELECT id_programacion_fk, fecha_hora_programada
             FROM historial_tomas
@@ -108,7 +91,6 @@ router.get('/proximas/:idUsuario', async (req, res) => {
               AND estado IN ('Tomado', 'No Tomado')
         `, [idsProg]);
 
-        // Agrupar registros por programación
         const registradasPorProg = {};
         for (const h of historialHoy) {
             if (!registradasPorProg[h.id_programacion_fk]) {
@@ -129,7 +111,6 @@ router.get('/proximas/:idUsuario', async (req, res) => {
                 registradasHoy
             );
 
-            // Solo incluir si la próxima toma está dentro de las próximas 24h
             if (fecha <= en24h) {
                 resultado.push({
                     idProgramacion:         prog.idProgramacion,
@@ -153,7 +134,6 @@ router.get('/proximas/:idUsuario', async (req, res) => {
     }
 });
 
-// ── 2. REGISTRAR TOMA ─────────────────────────────────────────────────────────
 router.post('/tomar', async (req, res) => {
     const { id_programacion_fk, fecha_hora_programada, estado } = req.body;
     if (!id_programacion_fk || !estado) {
@@ -166,7 +146,7 @@ router.post('/tomar', async (req, res) => {
             'INSERT INTO historial_tomas (id_programacion_fk, fecha_hora_programada, fecha_hora_real, estado) VALUES (?, ?, ?, ?)',
             [id_programacion_fk, fecha_hora_programada || '', fecha_real, estado]
         );
-        console.log(`✅ Toma: prog=${id_programacion_fk} estado=${estado} hora=${fecha_hora_programada}`);
+        console.log(` Toma: prog=${id_programacion_fk} estado=${estado} hora=${fecha_hora_programada}`);
         res.status(201).json({ mensaje: 'Registro guardado' });
     } catch (err) {
         console.error('Error tomar:', err.message);
@@ -174,7 +154,7 @@ router.post('/tomar', async (req, res) => {
     }
 });
 
-// ── 3. HISTORIAL ──────────────────────────────────────────────────────────────
+
 router.get('/usuario/:idUsuario', async (req, res) => {
     const { idUsuario } = req.params;
     try {
@@ -193,7 +173,6 @@ router.get('/usuario/:idUsuario', async (req, res) => {
     }
 });
 
-// ── 4. ELIMINAR TOMA ──────────────────────────────────────────────────────────
 router.delete('/eliminar/:idToma', async (req, res) => {
     const { idToma } = req.params;
     try {
@@ -204,7 +183,6 @@ router.delete('/eliminar/:idToma', async (req, res) => {
     }
 });
 
-// ── 5. LIMPIAR HISTORIAL ──────────────────────────────────────────────────────
 router.delete('/limpiar/:idUsuario', async (req, res) => {
     const { idUsuario } = req.params;
     try {

@@ -2,11 +2,10 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
-// ── AGREGAR ───────────────────────────────────────────────────────────────────
 router.post('/agregar', async (req, res) => {
     const { id_usuario_fk, nombre_enfermedad, descripcion, fecha_diagnostico } = req.body;
 
-    console.log('📥 Agregar enfermedad recibido:', req.body);
+    console.log(' Agregar enfermedad recibido:', req.body);
 
     // Validar que llegaron los datos mínimos
     if (!id_usuario_fk || !nombre_enfermedad) {
@@ -19,7 +18,7 @@ router.post('/agregar', async (req, res) => {
             [id_usuario_fk, nombre_enfermedad, descripcion || '', fecha_diagnostico || '']
         );
 
-        console.log('✅ Enfermedad insertada con ID:', result.insertId);
+        console.log('Enfermedad insertada con ID:', result.insertId);
 
         res.status(201).json({
             idEnfermedad:     result.insertId,
@@ -30,12 +29,11 @@ router.post('/agregar', async (req, res) => {
             mensaje:           'Enfermedad agregada correctamente'
         });
     } catch (err) {
-        console.error('❌ Error agregar enfermedad:', err.message);
+        console.error(' Error agregar enfermedad:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// ── OBTENER ───────────────────────────────────────────────────────────────────
 router.get('/:idUsuario', async (req, res) => {
     const { idUsuario } = req.params;
     try {
@@ -45,12 +43,11 @@ router.get('/:idUsuario', async (req, res) => {
         );
         res.json(results);
     } catch (err) {
-        console.error('❌ Error obtener enfermedades:', err.message);
+        console.error(' Error obtener enfermedades:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// ── EDITAR ────────────────────────────────────────────────────────────────────
 router.put('/editar/:id', async (req, res) => {
     const { id } = req.params;
     const { nombre_enfermedad, descripcion, fecha_diagnostico } = req.body;
@@ -61,19 +58,18 @@ router.put('/editar/:id', async (req, res) => {
         );
         res.json({ mensaje: 'Enfermedad actualizada' });
     } catch (err) {
-        console.error('❌ Error editar enfermedad:', err.message);
+        console.error(' Error editar enfermedad:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// ── ELIMINAR ──────────────────────────────────────────────────────────────────
 router.delete('/eliminar/:id', async (req, res) => {
     const { id } = req.params;
     try {
         await db.query('DELETE FROM enfermedades WHERE idEnfermedad = ?', [id]);
         res.json({ mensaje: 'Enfermedad eliminada' });
     } catch (err) {
-        console.error('❌ Error eliminar enfermedad:', err.message);
+        console.error(' Error eliminar enfermedad:', err.message);
         res.status(500).json({ error: err.message });
     }
 });

@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
-// ── LOGIN ─────────────────────────────────────────────────────────────────────
 router.post('/login', async (req, res) => {
     const { correo, password } = req.body;
     try {
@@ -21,7 +20,6 @@ router.post('/login', async (req, res) => {
     }
 });
 
-// ── REGISTRO ──────────────────────────────────────────────────────────────────
 router.post('/registro', async (req, res) => {
     const { nombre_completo, correo, password } = req.body;
     try {
@@ -35,7 +33,6 @@ router.post('/registro', async (req, res) => {
     }
 });
 
-// ── ACTUALIZAR PERFIL ─────────────────────────────────────────────────────────
 router.put('/actualizar/:id', async (req, res) => {
     const { id } = req.params;
     const { nombre_completo, correo, password } = req.body;
@@ -57,9 +54,7 @@ router.put('/actualizar/:id', async (req, res) => {
     }
 });
 
-// ── GUARDAR TOKEN FCM ─────────────────────────────────────────────────────────
-// La app Android llama a este endpoint cada vez que Firebase genera un nuevo token.
-// El token se guarda en la BD para poder enviarle notificaciones push al usuario.
+
 router.put('/fcm-token/:id', async (req, res) => {
     const { id } = req.params;
     const { fcm_token } = req.body;
