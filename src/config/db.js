@@ -2,10 +2,10 @@ require('dotenv').config();
 const mysql = require('mysql2');
 
 const pool = mysql.createPool({
-    host: process.env.DB_HOST || 52.71.230.113, // Esto leerá el 52.71.230.113 de Railway
-    user: process.env.DB_USER || medialert,
-    password: process.env.DB_PASSWORD || MediAlert2026!,
-    database: process.env.DB_NAME || medialert_db,
+    host: process.env.DB_HOST || '52.71.230.113', // Esto leerá el 52.71.230.113 de Railway
+    user: process.env.DB_USER || 'medialert',
+    password: process.env.DB_PASSWORD || 'MediAlert2026!',
+    database: process.env.DB_NAME || 'medialert_db',
     port: process.env.DB_PORT || 3306,
     waitForConnections: true,
     connectionLimit: 10,
