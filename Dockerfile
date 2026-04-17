@@ -1,20 +1,20 @@
-# Usa una versión de Node.js (la 18 es estable y recomendada)
-FROM node:18
+# 1. Usamos Node 18
+FROM node:18-slim
 
-# Crea la carpeta de trabajo dentro del servidor
+# 2. Directorio de trabajo
 WORKDIR /app
 
-# Copia los archivos de configuración de dependencias
+# 3. Copiamos los archivos de dependencias
 COPY package*.json ./
 
-# Instala las librerías de tu proyecto
-RUN npm install
+# 4. Instalamos las librerías (limpiando caché para que sea más rápido)
+RUN npm install --production
 
-# Copia todo el resto de tu código a la carpeta /app
+# 5. Copiamos el resto del código
 COPY . .
 
-# Expone el puerto que usa tu app (según tu código es el 3000)
+# 6. Railway asigna el puerto dinámicamente, pero exponemos el 3000 por defecto
 EXPOSE 3000
 
-# Comando para arrancar tu aplicación
-CMD ["node", "index.js"]
+# 7. Usamos el script de arranque oficial que pusimos en el package.json
+CMD ["npm", "start"]
