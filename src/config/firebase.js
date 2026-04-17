@@ -8,35 +8,31 @@ function inicializarFirebase() {
     try {
         let serviceAccount;
 
+        // PRIORIDAD: Railway (Variable de entorno)
         if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-            // Producción (Railway) — lee desde variable de entorno
             serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-            console.log(' Firebase: usando variable de entorno');
-        } else {
-            // Local — lee desde archivo
-            serviceAccount = require('./serviceAccountKey.json');
-            console.log(' Firebase: usando serviceAccountKey.json local');
+            console.log('✅ Firebase: Cargado desde variable de entorno');
+        } 
+        // SEGUNDO: Local (Archivo)
+        else {
+            try {
+                serviceAccount = require('./serviceAccountKey.json');
+                console.log('🏠 Firebase: Cargado desde archivo local');
+            } catch (e) {
+                throw new Error("No hay variable FIREBASE_SERVICE_ACCOUNT ni archivo local.");
+            }
         }
 
         firebaseApp = admin.initializeApp({
             credential: admin.credential.cert(serviceAccount)
         });
 
-        console.log(' Firebase Admin inicializado correctamente');
-
     } catch (error) {
-        console.error(' Error al inicializar Firebase Admin:', error.message);
-
-        if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
-            console.error('   Asegúrate de que serviceAccountKey.json esté en src/config/');
-        } else {
-            console.error('   Revisa que FIREBASE_SERVICE_ACCOUNT sea un JSON válido en Railway');
-        }
+        console.error('❌ Error crítico en Firebase:', error.message);
     }
 
     return firebaseApp;
 }
 
 inicializarFirebase();
-
 module.exports = admin;
