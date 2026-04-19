@@ -89,6 +89,45 @@ function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistrada
     return null;
 }
 
+function esFechaValida(fecha) {
+    return fecha instanceof Date && !Number.isNaN(fecha.getTime());
+}
+
+function resolverFechaProgramadaDesdeHora(horaProgramada, programacion, referencia = new Date()) {
+    if (!horaProgramada) return null;
+
+    const base = calcularSlotInicial(
+        programacion.hora_primera_toma,
+        programacion.frecuencia_horas,
+        referencia
+    );
+
+    if (!base) return null;
+
+    const horaObjetivo = normalizarTexto(horaProgramada);
+    let mejorSlot = null;
+    let mejorDistancia = Number.POSITIVE_INFINITY;
+    let slot = new Date(base.slot.getTime() - 24 * 60 * 60 * 1000);
+    const limiteBusqueda = new Date(referencia.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+    while (slot <= limiteBusqueda) {
+        if (
+            diaSemanaCoincide(programacion.dias_semana, slot) &&
+            normalizarTexto(formato12h(slot)) === horaObjetivo
+        ) {
+            const distancia = Math.abs(slot.getTime() - referencia.getTime());
+            if (distancia < mejorDistancia) {
+                mejorSlot = new Date(slot);
+                mejorDistancia = distancia;
+            }
+        }
+
+        slot = new Date(slot.getTime() + base.pasoMs);
+    }
+
+    return mejorSlot;
+}
+
 router.get('/proximas/:idUsuario', async (req, res) => {
     const { idUsuario } = req.params;
 
@@ -180,16 +219,48 @@ router.post('/tomar', async (req, res) => {
         return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
 
-    const fecha_real = new Date();
-    const fecha_programada = fecha_programada_dt
-        ? new Date(fecha_programada_dt)
-        : (
-            fecha_hora_programada
-                ? new Date(`${new Date().toDateString()} ${fecha_hora_programada}`)
-                : null
-        );
-
     try {
+        const [[programacion]] = await db.query(`
+            SELECT idProgramacion, hora_primera_toma, frecuencia_horas, dias_semana
+            FROM programacion_horarios
+            WHERE idProgramacion = ?
+            LIMIT 1
+        `, [id_programacion_fk]);
+
+        if (!programacion) {
+            return res.status(404).json({ error: 'Programacion no encontrada' });
+        }
+
+        const fecha_real = new Date();
+        const fecha_programada = fecha_programada_dt
+            ? new Date(fecha_programada_dt)
+            : (
+                resolverFechaProgramadaDesdeHora(
+                    fecha_hora_programada,
+                    programacion,
+                    fecha_real
+                ) || null
+            );
+
+        if (fecha_hora_programada && !esFechaValida(fecha_programada)) {
+            return res.status(400).json({ error: 'No se pudo resolver la fecha programada de la toma' });
+        }
+
+        if (esFechaValida(fecha_programada) && (estado === 'Tomado' || estado === 'No Tomado')) {
+            const [existente] = await db.query(`
+                SELECT idToma, estado
+                FROM historial_tomas
+                WHERE id_programacion_fk = ?
+                  AND fecha_programada_dt = ?
+                ORDER BY idToma DESC
+                LIMIT 1
+            `, [id_programacion_fk, fecha_programada]);
+
+            if (existente.length > 0 && existente[0].estado === estado) {
+                return res.status(200).json({ mensaje: 'La toma ya estaba registrada para este horario' });
+            }
+        }
+
         await db.query(
             `INSERT INTO historial_tomas
             (id_programacion_fk, fecha_hora_programada, fecha_hora_real, estado, fecha_programada_dt, fecha_real_dt)
