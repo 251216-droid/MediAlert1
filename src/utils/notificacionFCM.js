@@ -160,42 +160,58 @@ async function enviarNotificacionesProximas() {
         let enviadas = 0;
 
         for (const prog of programaciones) {
-            const [ultimoPospuesto] = await db.query(`
-                SELECT fecha_programada_dt, fecha_real_dt
+            const [ultimoMovimiento] = await db.query(`
+                SELECT estado, fecha_programada_dt, fecha_real_dt
                 FROM historial_tomas
                 WHERE id_programacion_fk = ?
-                  AND estado = 'Pospuesto'
-                  AND fecha_real_dt >= DATE_SUB(NOW(), INTERVAL 10 MINUTE)
                 ORDER BY idToma DESC
                 LIMIT 1
             `, [prog.idProgramacion]);
 
-            if (ultimoPospuesto.length > 0) {
-                const creado = new Date(ultimoPospuesto[0].fecha_real_dt);
-                const minutos = (ahora - creado) / (1000 * 60);
+            if (ultimoMovimiento.length > 0 && ultimoMovimiento[0].estado === 'Pospuesto') {
+                const fechaReal = new Date(ultimoMovimiento[0].fecha_real_dt);
+                const fechaProgramada = ultimoMovimiento[0].fecha_programada_dt;
 
-                if (minutos >= 4.5 && minutos <= 6.5) {
-                    const [cerrado] = await db.query(`
-                        SELECT idToma
-                        FROM historial_tomas
-                        WHERE id_programacion_fk = ?
-                          AND fecha_programada_dt = ?
-                          AND estado IN ('Tomado', 'No Tomado')
-                        LIMIT 1
-                    `, [prog.idProgramacion, ultimoPospuesto[0].fecha_programada_dt]);
+                if (Number.isNaN(fechaReal.getTime())) {
+                    console.log(` Pospuesto ignorado por fecha_real_dt invalida: prog=${prog.idProgramacion}`);
+                } else {
+                    const creado = fechaReal;
+                    const fechaLimite = new Date(creado.getTime() + 10 * 60 * 1000);
+                    if (ahora <= fechaLimite) {
+                        const minutos = (ahora - creado) / (1000 * 60);
 
-                    if (cerrado.length === 0) {
-                        const ok = await enviarNotificacionMedicamento(
-                            prog.idUsuario,
-                            prog.idProgramacion,
-                            prog.nombre_medicamento,
-                            prog.dosis || '',
-                            ultimoPospuesto[0].fecha_programada_dt
-                        );
+                        if (minutos >= 4.5 && minutos <= 6.5) {
+                            let cerrado = [];
 
-                        if (ok) {
-                            enviadas++;
-                            console.log(` Renotificacion POSPUESTO: "${prog.nombre_medicamento}" (${minutos.toFixed(1)} min despues)`);
+                            if (fechaProgramada) {
+                                [cerrado] = await db.query(`
+                                    SELECT idToma
+                                    FROM historial_tomas
+                                    WHERE id_programacion_fk = ?
+                                      AND fecha_programada_dt = ?
+                                      AND estado IN ('Tomado', 'No Tomado')
+                                    LIMIT 1
+                                `, [prog.idProgramacion, fechaProgramada]);
+                            }
+
+                            if (cerrado.length === 0) {
+                                const ok = await enviarNotificacionMedicamento(
+                                    prog.idUsuario,
+                                    prog.idProgramacion,
+                                    prog.nombre_medicamento,
+                                    prog.dosis || '',
+                                    fechaProgramada
+                                );
+
+                                if (ok) {
+                                    enviadas++;
+                                    console.log(` Renotificacion POSPUESTO: "${prog.nombre_medicamento}" (${minutos.toFixed(1)} min despues)`);
+                                }
+                            } else {
+                                console.log(` Pospuesto ya cerrado, no se renotifica: prog=${prog.idProgramacion}`);
+                            }
+                        } else {
+                            console.log(` Pospuesto fuera de ventana: prog=${prog.idProgramacion} minutos=${minutos.toFixed(1)}`);
                         }
                     }
                 }
@@ -214,7 +230,7 @@ async function enviarNotificacionesProximas() {
             const fechaSlotSql = formatearFechaSql(proximaSlot);
 
             const [historialSlot] = await db.query(`
-                SELECT estado, fecha_real_dt
+                SELECT estado, fecha_real_dt, fecha_programada_dt
                 FROM historial_tomas
                 WHERE id_programacion_fk = ?
                   AND fecha_programada_dt = ?
@@ -234,15 +250,15 @@ async function enviarNotificacionesProximas() {
                     const minutos = (ahora - creado) / (1000 * 60);
 
                     if (minutos >= 4.5 && minutos <= 6.5) {
-                const ok = await enviarNotificacionMedicamento(
-                    prog.idUsuario,
-                    prog.idProgramacion,
-                    prog.nombre_medicamento,
-                    prog.dosis || '',
-                    historialSlot[0].fecha_programada_dt
-                );
+                        const ok = await enviarNotificacionMedicamento(
+                            prog.idUsuario,
+                            prog.idProgramacion,
+                            prog.nombre_medicamento,
+                            prog.dosis || '',
+                            historialSlot[0].fecha_programada_dt
+                        );
 
-                if (ok) {
+                        if (ok) {
                             enviadas++;
                             console.log(` Renotificacion POSPUESTO: "${prog.nombre_medicamento}" (${minutos.toFixed(1)} min despues)`);
                         }
