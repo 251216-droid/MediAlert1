@@ -113,10 +113,10 @@ async function enviarNotificacionesProximas() {
         for (const prog of programaciones) {
 
             const [ultimoHoy] = await db.query(`
-                SELECT estado, creado_en
+                SELECT estado, creado_en, fecha_real_dt
                 FROM historial_tomas
                 WHERE id_programacion_fk = ?
-                  AND DATE(creado_en) = CURDATE()
+                  AND DATE(fecha_real_dt) = CURDATE()
                 ORDER BY idToma DESC
                 LIMIT 1
             `, [prog.idProgramacion]);
@@ -128,7 +128,7 @@ async function enviarNotificacionesProximas() {
             }
 
             if (ultimoEstado === 'Pospuesto') {
-                const creado = new Date(ultimoHoy[0].creado_en);
+                const creado = new Date(ultimoHoy[0].fecha_real_dt);
                 const minutos = (ahora - creado) / (1000 * 60);
                 if (minutos >= 4.5 && minutos <= 6.5) {
                     const ok = await enviarNotificacionMedicamento(
@@ -151,7 +151,7 @@ async function enviarNotificacionesProximas() {
                 const [reciente] = await db.query(`
                     SELECT idToma FROM historial_tomas
                     WHERE id_programacion_fk = ?
-                      AND creado_en >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+                      AND fecha_real_dt >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)
                     LIMIT 1
                 `, [prog.idProgramacion]);
 
