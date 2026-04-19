@@ -35,7 +35,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor MediAlert corriendo en: http://0.0.0.0:${PORT}`);
 
-    console.log('ENV Completa:', proçcess.env);
+    console.log('ENV Completa:', process.env);
     try {
         const { enviarNotificacionesProximas } = require('./src/utils/notificacionFCM');
         
