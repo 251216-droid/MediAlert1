@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
-
 function parsearHora(horaStr) {
     if (!horaStr) return { hours: 0, minutes: 0 };
     const partes = horaStr.trim().split(/[\s:]+/);
@@ -28,44 +27,28 @@ function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistrada
 
     const horaBase = new Date(now);
     horaBase.setHours(hours, minutes, 0, 0);
+
     const registradas = new Set(
         tomasRegistradasHoy.map(t => new Date(t).getTime())
     );
-    //const slots = [];
+
     let slot = new Date(horaBase);
+    const limiteBusqueda = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-
-    const finDia = new Date(now);
-    finDia.setHours(23, 59, 59, 999);
-
-    while (slot <= finDia) {
-
+    while (slot <= limiteBusqueda) {
         const slotTime = slot.getTime();
 
-        // Solo considerar futuras (o casi actuales)
-        if (slotTime > now.getTime() - 60000) {
-
-            // 🔥 Comparación REAL (timestamps)
-            if (!registradas.has(slotTime)) {
-                return {
-                    fecha: new Date(slot),
-                    display: formato12h(slot)
-                };
-            }
+        if (slotTime > now.getTime() - 60000 && !registradas.has(slotTime)) {
+            return {
+                fecha: new Date(slot),
+                display: formato12h(slot)
+            };
         }
 
-        // siguiente slot
         slot = new Date(slotTime + frecuenciaHoras * 60 * 60 * 1000);
-
     }
 
-    const manana = new Date(base);
-    manana.setDate(manana.getDate() + 1);
-
-    return {
-        fecha: manana,
-        display: formato12h(manana)
-    };
+    return null;
 }
 
 router.get('/proximas/:idUsuario', async (req, res) => {
@@ -92,17 +75,8 @@ router.get('/proximas/:idUsuario', async (req, res) => {
 
         const idsProg = programaciones.map(p => p.idProgramacion);
 
-        
-        /*const [historialHoy] = await db.query(`
-            SELECT id_programacion_fk, fecha_hora_programada
-            FROM historial_tomas
-            WHERE id_programacion_fk IN (?)
-              AND DATE(creado_en) = CURDATE()
-              AND estado IN ('Tomado', 'No Tomado')
-        `, [idsProg]);*/
-
         const [historialHoy] = await db.query(`
-            SELECT id_programacion_fk, fecha_hora_programada,fecha_programada_dt
+            SELECT id_programacion_fk, fecha_hora_programada, fecha_programada_dt
             FROM historial_tomas
             WHERE id_programacion_fk IN (?)
               AND DATE(fecha_programada_dt) = CURDATE()
@@ -114,7 +88,7 @@ router.get('/proximas/:idUsuario', async (req, res) => {
             if (!registradasPorProg[h.id_programacion_fk]) {
                 registradasPorProg[h.id_programacion_fk] = [];
             }
-            //registradasPorProg[h.id_programacion_fk].push(h.fecha_hora_programada);
+
             registradasPorProg[h.id_programacion_fk].push(
                 new Date(h.fecha_programada_dt).getTime()
             );
@@ -126,21 +100,25 @@ router.get('/proximas/:idUsuario', async (req, res) => {
 
         for (const prog of programaciones) {
             const registradasHoy = registradasPorProg[prog.idProgramacion] || [];
-            const { fecha, display } = calcularProximaFutura(
+            const proxima = calcularProximaFutura(
                 prog.hora_primera_toma,
                 prog.frecuencia_horas,
                 registradasHoy
             );
 
+            if (!proxima) continue;
+
+            const { fecha, display } = proxima;
+
             if (fecha <= en24h) {
                 resultado.push({
-                    idProgramacion:         prog.idProgramacion,
-                    nombre_medicamento:     prog.nombre_medicamento,
-                    tipo_presentacion:      prog.tipo_presentacion,
-                    dosis:                  prog.dosis,
-                    hora_primera_toma:      prog.hora_primera_toma,
-                    frecuencia_horas:       prog.frecuencia_horas,
-                    proxima_toma:           display,
+                    idProgramacion: prog.idProgramacion,
+                    nombre_medicamento: prog.nombre_medicamento,
+                    tipo_presentacion: prog.tipo_presentacion,
+                    dosis: prog.dosis,
+                    hora_primera_toma: prog.hora_primera_toma,
+                    frecuencia_horas: prog.frecuencia_horas,
+                    proxima_toma: display,
                     proxima_toma_timestamp: fecha.getTime()
                 });
             }
@@ -148,7 +126,6 @@ router.get('/proximas/:idUsuario', async (req, res) => {
 
         resultado.sort((a, b) => a.proxima_toma_timestamp - b.proxima_toma_timestamp);
         res.json(resultado);
-
     } catch (err) {
         console.error('Error proximas:', err.message);
         res.status(500).json({ error: err.message });
@@ -160,30 +137,27 @@ router.post('/tomar', async (req, res) => {
     if (!id_programacion_fk || !estado) {
         return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
-    const ahora = new Date();
-    //const fecha_real = formato12h(ahora) + ' ' + ahora.toLocaleDateString('es-MX');
+
     const fecha_real = new Date();
-const fecha_programada = fecha_hora_programada 
-    ? new Date(`${new Date().toDateString()} ${fecha_hora_programada}`)
-    : null;
+    const fecha_programada = fecha_hora_programada
+        ? new Date(`${new Date().toDateString()} ${fecha_hora_programada}`)
+        : null;
+
     try {
-        /*await db.query(
-            'INSERT INTO historial_tomas (id_programacion_fk, fecha_hora_programada, fecha_hora_real, estado) VALUES (?, ?, ?, ?)',
-            [id_programacion_fk, fecha_hora_programada || '', fecha_real, estado]
-        );*/
         await db.query(
-            `INSERT INTO historial_tomas 
-            (id_programacion_fk, fecha_hora_programada, fecha_hora_real, estado, fecha_programada_dt, fecha_real_dt) 
+            `INSERT INTO historial_tomas
+            (id_programacion_fk, fecha_hora_programada, fecha_hora_real, estado, fecha_programada_dt, fecha_real_dt)
             VALUES (?, ?, ?, ?, ?, ?)`,
             [
                 id_programacion_fk,
                 fecha_hora_programada || '',
-                '', // ya no necesitas guardar esto realmente
+                '',
                 estado,
                 fecha_programada,
                 fecha_real
             ]
         );
+
         console.log(` Toma: prog=${id_programacion_fk} estado=${estado} hora=${fecha_hora_programada}`);
         res.status(201).json({ mensaje: 'Registro guardado' });
     } catch (err) {
@@ -191,7 +165,6 @@ const fecha_programada = fecha_hora_programada
         res.status(500).json({ error: err.message });
     }
 });
-
 
 router.get('/usuario/:idUsuario', async (req, res) => {
     const { idUsuario } = req.params;

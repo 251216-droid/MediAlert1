@@ -1,5 +1,5 @@
 const admin = require('../config/firebase');
-const db    = require('../config/db');
+const db = require('../config/db');
 
 function parsearHoraHoy(horaStr) {
     const partes = horaStr.trim().split(/[\s:]+/);
@@ -13,20 +13,31 @@ function parsearHoraHoy(horaStr) {
     return d;
 }
 
-function calcularProximaSlot(horaPrimeraToma, frecuenciaHoras) {
-    const base   = parsearHoraHoy(horaPrimeraToma);
-    const ahora  = new Date();
-    const finDia = new Date();
-    finDia.setHours(23, 59, 59, 999);
-
-    let slot = new Date(base);
-    while (slot <= finDia) {
-        if (slot > ahora) return slot;
-        slot = new Date(slot.getTime() + frecuenciaHoras * 60 * 60 * 1000);
-    }
-    return null;
+function formatearFechaSql(date) {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mi = String(date.getMinutes()).padStart(2, '0');
+    const ss = String(date.getSeconds()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
 }
 
+function calcularProximaSlot(horaPrimeraToma, frecuenciaHoras, inicioVentana, finVentana) {
+    const base = parsearHoraHoy(horaPrimeraToma);
+    const limiteBusqueda = new Date(finVentana.getTime() + 24 * 60 * 60 * 1000);
+
+    let slot = new Date(base);
+    while (slot <= limiteBusqueda) {
+        if (slot >= inicioVentana && slot <= finVentana) {
+            return slot;
+        }
+
+        slot = new Date(slot.getTime() + frecuenciaHoras * 60 * 60 * 1000);
+    }
+
+    return null;
+}
 
 async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMedicamento, dosis) {
     try {
@@ -44,46 +55,41 @@ async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMe
 
         const mensaje = {
             token: fcmToken,
-
-           
             data: {
                 idProgramacion: String(idProgramacion),
-                nombre:         nombreMedicamento,
-                dosis:          String(dosis || '')
+                nombre: nombreMedicamento,
+                dosis: String(dosis || '')
             },
-
-            
             android: {
-                priority: 'high',           
-                ttl:      300,              
-
+                priority: 'high',
+                ttl: 300,
                 notification: {
-                    channelId:             'medialert_reminders',
-                    notificationPriority:  'PRIORITY_MAX',
-                    visibility:            'PUBLIC',
-                    defaultSound:          true,
-                    defaultVibrateTimings: true,
-                    
+                    channelId: 'medialert_reminders',
+                    notificationPriority: 'PRIORITY_MAX',
+                    visibility: 'PUBLIC',
+                    defaultSound: true,
+                    defaultVibrateTimings: true
                 }
             }
         };
 
         const respuesta = await admin.messaging().send(mensaje);
-        console.log(` FCM → usuario=${idUsuario} prog=${idProgramacion} medicamento="${nombreMedicamento}" | ID: ${respuesta}`);
+        console.log(` FCM -> usuario=${idUsuario} prog=${idProgramacion} medicamento="${nombreMedicamento}" | ID: ${respuesta}`);
         return true;
-
     } catch (error) {
-        if (error.code === 'messaging/registration-token-not-registered' ||
-            error.code === 'messaging/invalid-registration-token') {
-            console.log(`  Token FCM inválido para usuario ${idUsuario}, limpiando...`);
+        if (
+            error.code === 'messaging/registration-token-not-registered' ||
+            error.code === 'messaging/invalid-registration-token'
+        ) {
+            console.log(`  Token FCM invalido para usuario ${idUsuario}, limpiando...`);
             await db.query('UPDATE usuarios SET fcm_token = NULL WHERE idUsuario = ?', [idUsuario]);
         }
+
         console.error(error);
         console.error(`Error FCM usuario=${idUsuario}:`, error.message);
         return false;
     }
 }
-
 
 async function enviarNotificacionesProximas() {
     try {
@@ -96,8 +102,8 @@ async function enviarNotificacionesProximas() {
                 m.dosis,
                 m.id_usuario_fk AS idUsuario
             FROM programacion_horarios p
-            INNER JOIN medicamentos m  ON p.id_medicamento_fk = m.idMedicamento
-            INNER JOIN usuarios u      ON m.id_usuario_fk = u.idUsuario
+            INNER JOIN medicamentos m ON p.id_medicamento_fk = m.idMedicamento
+            INNER JOIN usuarios u ON m.id_usuario_fk = u.idUsuario
             WHERE m.estado_medicamento = 'Activo'
               AND (p.fecha_fin IS NULL OR p.fecha_fin >= CURDATE())
               AND u.fcm_token IS NOT NULL
@@ -105,70 +111,82 @@ async function enviarNotificacionesProximas() {
 
         if (programaciones.length === 0) return;
 
-        const ahora  = new Date();
-        
+        const ahora = new Date();
         const en1min = new Date(ahora.getTime() + 60 * 1000);
         let enviadas = 0;
 
         for (const prog of programaciones) {
+            const proximaSlot = calcularProximaSlot(
+                prog.hora_primera_toma,
+                prog.frecuencia_horas,
+                ahora,
+                en1min
+            );
 
-            const [ultimoHoy] = await db.query(`
-                SELECT estado, creado_en, fecha_real_dt
+            if (!proximaSlot) continue;
+
+            const fechaSlotSql = formatearFechaSql(proximaSlot);
+
+            const [historialSlot] = await db.query(`
+                SELECT estado, fecha_real_dt
                 FROM historial_tomas
                 WHERE id_programacion_fk = ?
-                  AND DATE(fecha_real_dt) = CURDATE()
+                  AND fecha_programada_dt = ?
                 ORDER BY idToma DESC
+                LIMIT 1
+            `, [prog.idProgramacion, fechaSlotSql]);
+
+            if (historialSlot.length > 0) {
+                const ultimoEstado = historialSlot[0].estado;
+
+                if (ultimoEstado === 'Tomado' || ultimoEstado === 'No Tomado') {
+                    continue;
+                }
+
+                if (ultimoEstado === 'Pospuesto') {
+                    const creado = new Date(historialSlot[0].fecha_real_dt);
+                    const minutos = (ahora - creado) / (1000 * 60);
+
+                    if (minutos >= 4.5 && minutos <= 6.5) {
+                        const ok = await enviarNotificacionMedicamento(
+                            prog.idUsuario,
+                            prog.idProgramacion,
+                            prog.nombre_medicamento,
+                            prog.dosis || ''
+                        );
+
+                        if (ok) {
+                            enviadas++;
+                            console.log(` Renotificacion POSPUESTO: "${prog.nombre_medicamento}" (${minutos.toFixed(1)} min despues)`);
+                        }
+                    }
+
+                    continue;
+                }
+            }
+
+            const [reciente] = await db.query(`
+                SELECT idToma FROM historial_tomas
+                WHERE id_programacion_fk = ?
+                  AND fecha_real_dt >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)
                 LIMIT 1
             `, [prog.idProgramacion]);
 
-            const ultimoEstado = ultimoHoy.length > 0 ? ultimoHoy[0].estado : null;
+            if (reciente.length > 0) continue;
 
-            if (ultimoEstado === 'Tomado' || ultimoEstado === 'No Tomado') {
-                continue;
-            }
+            const ok = await enviarNotificacionMedicamento(
+                prog.idUsuario,
+                prog.idProgramacion,
+                prog.nombre_medicamento,
+                prog.dosis || ''
+            );
 
-            if (ultimoEstado === 'Pospuesto') {
-                const creado = new Date(ultimoHoy[0].fecha_real_dt);
-                const minutos = (ahora - creado) / (1000 * 60);
-                if (minutos >= 4.5 && minutos <= 6.5) {
-                    const ok = await enviarNotificacionMedicamento(
-                        prog.idUsuario, prog.idProgramacion,
-                        prog.nombre_medicamento, prog.dosis || ''
-                    );
-                    if (ok) {
-                        enviadas++;
-                        console.log(` Renotificación POSPUESTO: "${prog.nombre_medicamento}" (${minutos.toFixed(1)} min después)`);
-                    }
-                }
-                continue;
-            }
-
-            const proximaSlot = calcularProximaSlot(prog.hora_primera_toma, prog.frecuencia_horas);
-            if (!proximaSlot) continue;
-
-            if (proximaSlot >= ahora && proximaSlot <= en1min) {
-
-                const [reciente] = await db.query(`
-                    SELECT idToma FROM historial_tomas
-                    WHERE id_programacion_fk = ?
-                      AND fecha_real_dt >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)
-                    LIMIT 1
-                `, [prog.idProgramacion]);
-
-                if (reciente.length > 0) continue;
-
-                const ok = await enviarNotificacionMedicamento(
-                    prog.idUsuario, prog.idProgramacion,
-                    prog.nombre_medicamento, prog.dosis || ''
-                );
-                if (ok) enviadas++;
-            }
+            if (ok) enviadas++;
         }
 
         if (enviadas > 0) {
-            console.log(` Cron FCM: ${enviadas} notificación(es) enviada(s) — ${ahora.toLocaleTimeString('es-MX')}`);
+            console.log(` Cron FCM: ${enviadas} notificacion(es) enviada(s) - ${ahora.toLocaleTimeString('es-MX')}`);
         }
-
     } catch (err) {
         console.error(' Error en cron FCM:', err.message);
     }
