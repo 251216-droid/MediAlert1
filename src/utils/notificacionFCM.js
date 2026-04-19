@@ -23,17 +23,59 @@ function formatearFechaSql(date) {
     return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
 }
 
-function calcularProximaSlot(horaPrimeraToma, frecuenciaHoras, inicioVentana, finVentana) {
+function normalizarTexto(valor) {
+    return String(valor || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+}
+
+function diaSemanaCoincide(diasSemana, fecha) {
+    if (!diasSemana || normalizarTexto(diasSemana) === 'todos') return true;
+
+    const diasMap = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+    const diaActual = diasMap[fecha.getDay()];
+
+    return String(diasSemana)
+        .split(',')
+        .map(normalizarTexto)
+        .some(dia => dia === diaActual);
+}
+
+function calcularSlotInicial(horaPrimeraToma, frecuenciaHoras, referencia) {
+    const frecuencia = Number(frecuenciaHoras);
+    if (!Number.isFinite(frecuencia) || frecuencia <= 0) return null;
+
     const base = parsearHoraHoy(horaPrimeraToma);
+    const pasoMs = frecuencia * 60 * 60 * 1000;
+    const slot = new Date(referencia);
+    slot.setHours(base.getHours(), base.getMinutes(), 0, 0);
+
+    while (slot.getTime() > referencia.getTime()) {
+        slot.setTime(slot.getTime() - pasoMs);
+    }
+
+    return { slot, pasoMs };
+}
+
+function calcularProximaSlot(horaPrimeraToma, frecuenciaHoras, inicioVentana, finVentana, diasSemana) {
+    const base = calcularSlotInicial(horaPrimeraToma, frecuenciaHoras, inicioVentana);
+    if (!base) return null;
+
     const limiteBusqueda = new Date(finVentana.getTime() + 24 * 60 * 60 * 1000);
 
-    let slot = new Date(base);
+    let slot = new Date(base.slot);
     while (slot <= limiteBusqueda) {
-        if (slot >= inicioVentana && slot <= finVentana) {
+        if (
+            slot >= inicioVentana &&
+            slot <= finVentana &&
+            diaSemanaCoincide(diasSemana, slot)
+        ) {
             return slot;
         }
 
-        slot = new Date(slot.getTime() + frecuenciaHoras * 60 * 60 * 1000);
+        slot = new Date(slot.getTime() + base.pasoMs);
     }
 
     return null;
@@ -98,6 +140,7 @@ async function enviarNotificacionesProximas() {
                 p.idProgramacion,
                 p.hora_primera_toma,
                 p.frecuencia_horas,
+                p.dias_semana,
                 m.nombre_medicamento,
                 m.dosis,
                 m.id_usuario_fk AS idUsuario
@@ -120,7 +163,8 @@ async function enviarNotificacionesProximas() {
                 prog.hora_primera_toma,
                 prog.frecuencia_horas,
                 ahora,
-                en1min
+                en1min,
+                prog.dias_semana
             );
 
             if (!proximaSlot) continue;

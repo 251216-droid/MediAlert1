@@ -21,31 +21,69 @@ function formato12h(date) {
     return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
-function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistradasHoy) {
-    const now = new Date();
-    const { hours, minutes } = parsearHora(horaPrimeraToma);
+function normalizarTexto(valor) {
+    return String(valor || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+}
 
-    const horaBase = new Date(now);
-    horaBase.setHours(hours, minutes, 0, 0);
+function diaSemanaCoincide(diasSemana, fecha) {
+    if (!diasSemana || normalizarTexto(diasSemana) === 'todos') return true;
+
+    const diasMap = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+    const diaActual = diasMap[fecha.getDay()];
+
+    return String(diasSemana)
+        .split(',')
+        .map(normalizarTexto)
+        .some(dia => dia === diaActual);
+}
+
+function calcularSlotInicial(horaPrimeraToma, frecuenciaHoras, referencia) {
+    const frecuencia = Number(frecuenciaHoras);
+    if (!Number.isFinite(frecuencia) || frecuencia <= 0) return null;
+
+    const { hours, minutes } = parsearHora(horaPrimeraToma);
+    const pasoMs = frecuencia * 60 * 60 * 1000;
+    const slot = new Date(referencia);
+    slot.setHours(hours, minutes, 0, 0);
+
+    while (slot.getTime() > referencia.getTime()) {
+        slot.setTime(slot.getTime() - pasoMs);
+    }
+
+    return { slot, pasoMs };
+}
+
+function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistradas, diasSemana) {
+    const now = new Date();
+    const base = calcularSlotInicial(horaPrimeraToma, frecuenciaHoras, now);
+    if (!base) return null;
 
     const registradas = new Set(
-        tomasRegistradasHoy.map(t => new Date(t).getTime())
+        tomasRegistradas.map(t => new Date(t).getTime())
     );
 
-    let slot = new Date(horaBase);
+    let slot = new Date(base.slot);
     const limiteBusqueda = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
     while (slot <= limiteBusqueda) {
         const slotTime = slot.getTime();
 
-        if (slotTime > now.getTime() - 60000 && !registradas.has(slotTime)) {
+        if (
+            slotTime > now.getTime() - 60000 &&
+            diaSemanaCoincide(diasSemana, slot) &&
+            !registradas.has(slotTime)
+        ) {
             return {
                 fecha: new Date(slot),
                 display: formato12h(slot)
             };
         }
 
-        slot = new Date(slotTime + frecuenciaHoras * 60 * 60 * 1000);
+        slot = new Date(slotTime + base.pasoMs);
     }
 
     return null;
@@ -63,6 +101,7 @@ router.get('/proximas/:idUsuario', async (req, res) => {
                 m.dosis,
                 p.hora_primera_toma,
                 p.frecuencia_horas,
+                p.dias_semana,
                 p.fecha_fin
             FROM programacion_horarios p
             INNER JOIN medicamentos m ON p.id_medicamento_fk = m.idMedicamento
@@ -75,16 +114,17 @@ router.get('/proximas/:idUsuario', async (req, res) => {
 
         const idsProg = programaciones.map(p => p.idProgramacion);
 
-        const [historialHoy] = await db.query(`
+        const [historialProgramadas] = await db.query(`
             SELECT id_programacion_fk, fecha_hora_programada, fecha_programada_dt
             FROM historial_tomas
             WHERE id_programacion_fk IN (?)
-              AND DATE(fecha_programada_dt) = CURDATE()
+              AND fecha_programada_dt >= DATE_SUB(NOW(), INTERVAL 1 DAY)
+              AND fecha_programada_dt <= DATE_ADD(NOW(), INTERVAL 7 DAY)
               AND estado IN ('Tomado', 'No Tomado')
         `, [idsProg]);
 
         const registradasPorProg = {};
-        for (const h of historialHoy) {
+        for (const h of historialProgramadas) {
             if (!registradasPorProg[h.id_programacion_fk]) {
                 registradasPorProg[h.id_programacion_fk] = [];
             }
@@ -99,11 +139,12 @@ router.get('/proximas/:idUsuario', async (req, res) => {
         const en24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
         for (const prog of programaciones) {
-            const registradasHoy = registradasPorProg[prog.idProgramacion] || [];
+            const registradas = registradasPorProg[prog.idProgramacion] || [];
             const proxima = calcularProximaFutura(
                 prog.hora_primera_toma,
                 prog.frecuencia_horas,
-                registradasHoy
+                registradas,
+                prog.dias_semana
             );
 
             if (!proxima) continue;
@@ -119,6 +160,7 @@ router.get('/proximas/:idUsuario', async (req, res) => {
                     hora_primera_toma: prog.hora_primera_toma,
                     frecuencia_horas: prog.frecuencia_horas,
                     proxima_toma: display,
+                    proxima_toma_fecha: fecha.toISOString(),
                     proxima_toma_timestamp: fecha.getTime()
                 });
             }
@@ -133,15 +175,19 @@ router.get('/proximas/:idUsuario', async (req, res) => {
 });
 
 router.post('/tomar', async (req, res) => {
-    const { id_programacion_fk, fecha_hora_programada, estado } = req.body;
+    const { id_programacion_fk, fecha_hora_programada, fecha_programada_dt, estado } = req.body;
     if (!id_programacion_fk || !estado) {
         return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
 
     const fecha_real = new Date();
-    const fecha_programada = fecha_hora_programada
-        ? new Date(`${new Date().toDateString()} ${fecha_hora_programada}`)
-        : null;
+    const fecha_programada = fecha_programada_dt
+        ? new Date(fecha_programada_dt)
+        : (
+            fecha_hora_programada
+                ? new Date(`${new Date().toDateString()} ${fecha_hora_programada}`)
+                : null
+        );
 
     try {
         await db.query(
