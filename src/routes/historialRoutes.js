@@ -28,27 +28,10 @@ function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistrada
 
     const horaBase = new Date(now);
     horaBase.setHours(hours, minutes, 0, 0);
-
-    /*const registradas = new Set(
-        tomasRegistradasHoy.map(t => t.toLowerCase().trim())
-    );*/
-
     const registradas = new Set(
-        tomasRegistradasHoy.map(t =>
-            t.toLowerCase().replace(/\s/g, '')
-        )
+        tomasRegistradasHoy.map(t => new Date(t).getTime())
     );
-
-    function formatoComparable(date) {
-        return date.toLocaleTimeString('en-US', {
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true
-        }).toLowerCase().replace(/\s/g, '');
-    }
-
-
-    const slots = [];
+    //const slots = [];
     let slot = new Date(horaBase);
 
 
@@ -56,32 +39,33 @@ function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistrada
     finDia.setHours(23, 59, 59, 999);
 
     while (slot <= finDia) {
-        slots.push(new Date(slot));
-        slot = new Date(slot.getTime() + frecuenciaHoras * 60 * 60 * 1000);
-        if (slots.length > 100) break;
-    }
 
-    for (const s of slots) {
-        if (s.getTime() > now.getTime() - 60000) {
-            /*const display = formato12h(s).toLowerCase().trim();
-            if (!registradas.has(display)) {
-                return { fecha: s, display: formato12h(s) };
-            }*/
+        const slotTime = slot.getTime();
 
-                const comparable = formatoComparable(s);
-                if (!registradas.has(comparable)) {
+        // Solo considerar futuras (o casi actuales)
+        if (slotTime > now.getTime() - 60000) {
+
+            // 🔥 Comparación REAL (timestamps)
+            if (!registradas.has(slotTime)) {
                 return {
-                    fecha: s,
-                    display: formato12h(s)
+                    fecha: new Date(slot),
+                    display: formato12h(slot)
                 };
             }
-
         }
+
+        // siguiente slot
+        slot = new Date(slotTime + frecuenciaHoras * 60 * 60 * 1000);
+
     }
 
-    const manana = new Date(horaBase);
+    const manana = new Date(base);
     manana.setDate(manana.getDate() + 1);
-    return { fecha: manana, display: formato12h(manana) };
+
+    return {
+        fecha: manana,
+        display: formato12h(manana)
+    };
 }
 
 router.get('/proximas/:idUsuario', async (req, res) => {
@@ -109,11 +93,19 @@ router.get('/proximas/:idUsuario', async (req, res) => {
         const idsProg = programaciones.map(p => p.idProgramacion);
 
         
-        const [historialHoy] = await db.query(`
+        /*const [historialHoy] = await db.query(`
             SELECT id_programacion_fk, fecha_hora_programada
             FROM historial_tomas
             WHERE id_programacion_fk IN (?)
               AND DATE(creado_en) = CURDATE()
+              AND estado IN ('Tomado', 'No Tomado')
+        `, [idsProg]);*/
+
+        const [historialHoy] = await db.query(`
+            SELECT id_programacion_fk, fecha_hora_programada,fecha_programada_dt
+            FROM historial_tomas
+            WHERE id_programacion_fk IN (?)
+              AND DATE(fecha_programada_dt) = CURDATE()
               AND estado IN ('Tomado', 'No Tomado')
         `, [idsProg]);
 
@@ -122,7 +114,10 @@ router.get('/proximas/:idUsuario', async (req, res) => {
             if (!registradasPorProg[h.id_programacion_fk]) {
                 registradasPorProg[h.id_programacion_fk] = [];
             }
-            registradasPorProg[h.id_programacion_fk].push(h.fecha_hora_programada);
+            //registradasPorProg[h.id_programacion_fk].push(h.fecha_hora_programada);
+            registradasPorProg[h.id_programacion_fk].push(
+                new Date(h.fecha_programada_dt).getTime()
+            );
         }
 
         const resultado = [];
@@ -166,11 +161,28 @@ router.post('/tomar', async (req, res) => {
         return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
     const ahora = new Date();
-    const fecha_real = formato12h(ahora) + ' ' + ahora.toLocaleDateString('es-MX');
+    //const fecha_real = formato12h(ahora) + ' ' + ahora.toLocaleDateString('es-MX');
+    const fecha_real = new Date();
+const fecha_programada = fecha_hora_programada 
+    ? new Date(`${new Date().toDateString()} ${fecha_hora_programada}`)
+    : null;
     try {
-        await db.query(
+        /*await db.query(
             'INSERT INTO historial_tomas (id_programacion_fk, fecha_hora_programada, fecha_hora_real, estado) VALUES (?, ?, ?, ?)',
             [id_programacion_fk, fecha_hora_programada || '', fecha_real, estado]
+        );*/
+        await db.query(
+            `INSERT INTO historial_tomas 
+            (id_programacion_fk, fecha_hora_programada, fecha_hora_real, estado, fecha_programada_dt, fecha_real_dt) 
+            VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+                id_programacion_fk,
+                fecha_hora_programada || '',
+                '', // ya no necesitas guardar esto realmente
+                estado,
+                fecha_programada,
+                fecha_real
+            ]
         );
         console.log(` Toma: prog=${id_programacion_fk} estado=${estado} hora=${fecha_hora_programada}`);
         res.status(201).json({ mensaje: 'Registro guardado' });
