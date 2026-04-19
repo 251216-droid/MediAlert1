@@ -81,7 +81,14 @@ function calcularProximaSlot(horaPrimeraToma, frecuenciaHoras, inicioVentana, fi
     return null;
 }
 
-async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMedicamento, dosis, fechaProgramada = null) {
+async function enviarNotificacionMedicamento(
+    idUsuario,
+    idProgramacion,
+    nombreMedicamento,
+    dosis,
+    fechaProgramada = null,
+    origen = 'normal'
+) {
     try {
         const [rows] = await db.query(
             'SELECT fcm_token FROM usuarios WHERE idUsuario = ?',
@@ -116,8 +123,11 @@ async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMe
             }
         };
 
+        const slotLog = fechaProgramada ? formatearFechaSql(new Date(fechaProgramada)) : 'sin-slot';
         const respuesta = await admin.messaging().send(mensaje);
-        console.log(` FCM -> usuario=${idUsuario} prog=${idProgramacion} medicamento="${nombreMedicamento}" | ID: ${respuesta}`);
+        console.log(
+            ` FCM [${origen}] -> usuario=${idUsuario} prog=${idProgramacion} slot=${slotLog} medicamento="${nombreMedicamento}" | ID: ${respuesta}`
+        );
         return true;
     } catch (error) {
         if (
@@ -181,6 +191,9 @@ async function enviarNotificacionesProximas() {
                         const minutos = (ahora - creado) / (1000 * 60);
 
                         if (minutos >= 4.5 && minutos <= 6.5) {
+                            console.log(
+                                ` Evaluando POSPUESTO: prog=${prog.idProgramacion} slot=${fechaProgramada || 'sin-slot'} minutos=${minutos.toFixed(1)}`
+                            );
                             let cerrado = [];
 
                             if (fechaProgramada) {
@@ -200,7 +213,8 @@ async function enviarNotificacionesProximas() {
                                     prog.idProgramacion,
                                     prog.nombre_medicamento,
                                     prog.dosis || '',
-                                    fechaProgramada
+                                    fechaProgramada,
+                                    'pospuesto'
                                 );
 
                                 if (ok) {
@@ -255,7 +269,8 @@ async function enviarNotificacionesProximas() {
                             prog.idProgramacion,
                             prog.nombre_medicamento,
                             prog.dosis || '',
-                            historialSlot[0].fecha_programada_dt
+                            historialSlot[0].fecha_programada_dt,
+                            'pospuesto-slot'
                         );
 
                         if (ok) {
@@ -277,12 +292,16 @@ async function enviarNotificacionesProximas() {
 
             if (reciente.length > 0) continue;
 
+            console.log(
+                ` Evaluando NORMAL: prog=${prog.idProgramacion} slot=${fechaSlotSql}`
+            );
             const ok = await enviarNotificacionMedicamento(
                 prog.idUsuario,
                 prog.idProgramacion,
                 prog.nombre_medicamento,
                 prog.dosis || '',
-                proximaSlot
+                proximaSlot,
+                'normal'
             );
 
             if (ok) enviadas++;
