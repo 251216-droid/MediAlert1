@@ -81,7 +81,7 @@ function calcularProximaSlot(horaPrimeraToma, frecuenciaHoras, inicioVentana, fi
     return null;
 }
 
-async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMedicamento, dosis) {
+async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMedicamento, dosis, fechaProgramada = null) {
     try {
         const [rows] = await db.query(
             'SELECT fcm_token FROM usuarios WHERE idUsuario = ?',
@@ -100,7 +100,8 @@ async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMe
             data: {
                 idProgramacion: String(idProgramacion),
                 nombre: nombreMedicamento,
-                dosis: String(dosis || '')
+                dosis: String(dosis || ''),
+                fecha_programada_dt: fechaProgramada ? formatearFechaSql(fechaProgramada) : ''
             },
             android: {
                 priority: 'high',
@@ -159,6 +160,47 @@ async function enviarNotificacionesProximas() {
         let enviadas = 0;
 
         for (const prog of programaciones) {
+            const [ultimoPospuesto] = await db.query(`
+                SELECT fecha_programada_dt, fecha_real_dt
+                FROM historial_tomas
+                WHERE id_programacion_fk = ?
+                  AND estado = 'Pospuesto'
+                  AND fecha_real_dt >= DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+                ORDER BY idToma DESC
+                LIMIT 1
+            `, [prog.idProgramacion]);
+
+            if (ultimoPospuesto.length > 0) {
+                const creado = new Date(ultimoPospuesto[0].fecha_real_dt);
+                const minutos = (ahora - creado) / (1000 * 60);
+
+                if (minutos >= 4.5 && minutos <= 6.5) {
+                    const [cerrado] = await db.query(`
+                        SELECT idToma
+                        FROM historial_tomas
+                        WHERE id_programacion_fk = ?
+                          AND fecha_programada_dt = ?
+                          AND estado IN ('Tomado', 'No Tomado')
+                        LIMIT 1
+                    `, [prog.idProgramacion, ultimoPospuesto[0].fecha_programada_dt]);
+
+                    if (cerrado.length === 0) {
+                        const ok = await enviarNotificacionMedicamento(
+                            prog.idUsuario,
+                            prog.idProgramacion,
+                            prog.nombre_medicamento,
+                            prog.dosis || '',
+                            ultimoPospuesto[0].fecha_programada_dt
+                        );
+
+                        if (ok) {
+                            enviadas++;
+                            console.log(` Renotificacion POSPUESTO: "${prog.nombre_medicamento}" (${minutos.toFixed(1)} min despues)`);
+                        }
+                    }
+                }
+            }
+
             const proximaSlot = calcularProximaSlot(
                 prog.hora_primera_toma,
                 prog.frecuencia_horas,
@@ -192,14 +234,15 @@ async function enviarNotificacionesProximas() {
                     const minutos = (ahora - creado) / (1000 * 60);
 
                     if (minutos >= 4.5 && minutos <= 6.5) {
-                        const ok = await enviarNotificacionMedicamento(
-                            prog.idUsuario,
-                            prog.idProgramacion,
-                            prog.nombre_medicamento,
-                            prog.dosis || ''
-                        );
+                const ok = await enviarNotificacionMedicamento(
+                    prog.idUsuario,
+                    prog.idProgramacion,
+                    prog.nombre_medicamento,
+                    prog.dosis || '',
+                    historialSlot[0].fecha_programada_dt
+                );
 
-                        if (ok) {
+                if (ok) {
                             enviadas++;
                             console.log(` Renotificacion POSPUESTO: "${prog.nombre_medicamento}" (${minutos.toFixed(1)} min despues)`);
                         }
@@ -222,7 +265,8 @@ async function enviarNotificacionesProximas() {
                 prog.idUsuario,
                 prog.idProgramacion,
                 prog.nombre_medicamento,
-                prog.dosis || ''
+                prog.dosis || '',
+                proximaSlot
             );
 
             if (ok) enviadas++;
