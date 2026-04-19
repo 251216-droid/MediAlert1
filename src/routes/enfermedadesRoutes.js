@@ -7,7 +7,6 @@ router.post('/agregar', async (req, res) => {
 
     console.log(' Agregar enfermedad recibido:', req.body);
 
-    // Validar que llegaron los datos mínimos
     if (!id_usuario_fk || !nombre_enfermedad) {
         return res.status(400).json({ error: 'Faltan campos obligatorios: id_usuario_fk y nombre_enfermedad' });
     }

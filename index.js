@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
 
-// Importar rutas
+
 const authRoutes = require('./src/routes/authRoutes');
 const enfermedadesRoutes = require('./src/routes/enfermedadesRoutes');
 const medicamentosRoutes = require('./src/routes/medicamentos');
@@ -13,11 +13,11 @@ const notificacionesRoutes = require('./src/routes/notificaciones');
 
 const app = express();
 
-// Middlewares
+
 app.use(cors());
 app.use(express.json());
 
-// Definición de rutas
+
 app.use('/api/auth', authRoutes);
 app.use('/api/enfermedades', enfermedadesRoutes);
 app.use('/api/medicamentos', medicamentosRoutes);
@@ -29,14 +29,12 @@ app.get('/', (req, res) => {
     res.send('🚀 API de MediAlert con Firebase FCM funcionando al 100%');
 });
 
-// --- CORRECCIÓN CRÍTICA PARA RAILWAY/DOCKER ---
-// Usamos 0.0.0.0 para que el servidor acepte conexiones externas en el contenedor
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor MediAlert corriendo en: http://0.0.0.0:${PORT}`);
 
-    // Mover el require del cron aquí es válido, pero asegúrate de que el path sea correcto
     try {
         const { enviarNotificacionesProximas } = require('./src/utils/notificacionFCM');
         

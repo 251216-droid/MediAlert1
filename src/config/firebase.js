@@ -9,7 +9,7 @@ function inicializarFirebase() {
         let serviceAccount;
 
         // PRIORIDAD: Railway (Variable de entorno)
-        if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        if (process.env.FIREBASE_SERVICE_ACCOUNT  ) {
             serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
             console.log('✅ Firebase: Cargado desde variable de entorno');
         } 

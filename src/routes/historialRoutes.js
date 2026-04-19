@@ -29,12 +29,29 @@ function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistrada
     const horaBase = new Date(now);
     horaBase.setHours(hours, minutes, 0, 0);
 
-    const registradas = new Set(
+    /*const registradas = new Set(
         tomasRegistradasHoy.map(t => t.toLowerCase().trim())
+    );*/
+
+    const registradas = new Set(
+        tomasRegistradasHoy.map(t =>
+            t.toLowerCase().replace(/\s/g, '')
+        )
     );
+
+    function formatoComparable(date) {
+        return date.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        }).toLowerCase().replace(/\s/g, '');
+    }
+
 
     const slots = [];
     let slot = new Date(horaBase);
+
+
     const finDia = new Date(now);
     finDia.setHours(23, 59, 59, 999);
 
@@ -46,10 +63,19 @@ function calcularProximaFutura(horaPrimeraToma, frecuenciaHoras, tomasRegistrada
 
     for (const s of slots) {
         if (s.getTime() > now.getTime() - 60000) {
-            const display = formato12h(s).toLowerCase().trim();
+            /*const display = formato12h(s).toLowerCase().trim();
             if (!registradas.has(display)) {
                 return { fecha: s, display: formato12h(s) };
+            }*/
+
+                const comparable = formatoComparable(s);
+                if (!registradas.has(comparable)) {
+                return {
+                    fecha: s,
+                    display: formato12h(s)
+                };
             }
+
         }
     }
 

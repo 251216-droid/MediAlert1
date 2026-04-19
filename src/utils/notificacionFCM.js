@@ -13,7 +13,6 @@ function parsearHoraHoy(horaStr) {
     return d;
 }
 
-// ── Calcular próximo slot futuro ──────────────────────────────────────────────
 function calcularProximaSlot(horaPrimeraToma, frecuenciaHoras) {
     const base   = parsearHoraHoy(horaPrimeraToma);
     const ahora  = new Date();
@@ -53,7 +52,7 @@ async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMe
                 dosis:          String(dosis || '')
             },
 
-            // Configuración Android para garantizar entrega inmediata
+            
             android: {
                 priority: 'high',           
                 ttl:      300,              
@@ -79,6 +78,7 @@ async function enviarNotificacionMedicamento(idUsuario, idProgramacion, nombreMe
             console.log(`  Token FCM inválido para usuario ${idUsuario}, limpiando...`);
             await db.query('UPDATE usuarios SET fcm_token = NULL WHERE idUsuario = ?', [idUsuario]);
         }
+        console.error(error);
         console.error(`Error FCM usuario=${idUsuario}:`, error.message);
         return false;
     }

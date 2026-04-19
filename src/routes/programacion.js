@@ -10,14 +10,14 @@ router.post('/agregar', async (req, res) => {
     if (duracion_dias && duracion_dias > 0) {
         const hoy = new Date();
         hoy.setDate(hoy.getDate() + parseInt(duracion_dias));
-        fecha_fin = hoy.toISOString().slice(0, 10); // YYYY-MM-DD
+        fecha_fin = hoy.toISOString().slice(0, 10); 
     }
     
     const query = 'INSERT INTO programacion_horarios (id_medicamento_fk, hora_primera_toma, frecuencia_horas, dias_semana, fecha_fin) VALUES (?, ?, ?, ?, ?)';
     try {
         await db.query(query, [id_medicamento_fk, hora_primera_toma, frecuencia_horas, dias_semana, fecha_fin]);
         
-        //quitar
+        
         if (fecha_fin) {
             console.log(` Programación agregada: medicamento=${id_medicamento_fk} primera_toma=${hora_primera_toma} frecuencia=${frecuencia_horas} dias=${dias_semana} fecha_fin=${fecha_fin}`);
         }
